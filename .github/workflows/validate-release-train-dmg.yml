@@ -1,0 +1,51 @@
+name: Validate Release Train DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        required: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  context:
+    runs-on: ubuntu-latest
+    outputs:
+      version: "0.10.7"
+      release_sha: ${{ github.sha }}
+      target_branch: main
+      pre_release: "false"
+      dry_run: ${{ inputs.dry_run }}
+    steps:
+      - run: 'true'
+
+  create-release:
+    needs: context
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check rehearsal has no official tag
+        if: inputs.dry_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v0.10.7" --jq length)" = 0
+      - name: Verify the stable Release fixture exists
+        if: "!inputs.dry_run"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release view v0.10.7 --json id
+
+  publish-actrium-macos:
+    name: Publish Actrium macOS DMG
+    needs: [context, create-release]
+    if: needs.context.outputs.target_branch == 'main' && needs.context.outputs.pre_release == 'false'
+    uses: ./.github/workflows/_actrium-macos-release.yml
+    with:
+      tag: v${{ needs.context.outputs.version }}
+      source_sha: ${{ needs.context.outputs.release_sha }}
+      publish: ${{ !fromJSON(needs.context.outputs.dry_run) }}
+
